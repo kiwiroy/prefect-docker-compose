@@ -9,6 +9,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_VOLUME_NAME: ${POSTGRES_VOLUME_NAME}
     volumes:
       - postgres:/var/lib/postgresql/data
     networks:
@@ -63,7 +64,7 @@ services:
   apollo:
     image: "prefecthq/apollo:${PREFECT_SERVER_TAG:-latest}"
     ports:
-      - "4200:4200"
+      - "${PREFECT_SERVER__APOLLO_PORT}:4200"
     command: bash -c "./post-start.sh && npm run serve"
     environment:
       HASURA_API_URL: http://hasura:3000/v1alpha1/graphql
@@ -72,19 +73,27 @@ services:
       PREFECT_SERVER__TELEMETRY__ENABLED: "false"
       GRAPHQL_SERVICE_HOST: http://graphql
       GRAPHQL_SERVICE_PORT: 4201
+    healthcheck:
+      test: curl --fail --silent "http://apollo:4200/.well-known/apollo/server-health" &> /dev/null || exit 1
+      interval: 10s
+      timeout: 2s
+      retries: 60
+      start_period: 1s
     networks:
       - prefect-server
     restart: "always"
     depends_on:
       - graphql
+      - hasura
   
   ui:
     image: "prefecthq/ui:${PREFECT_UI_TAG:-latest}"
     ports:
-      - "8080:8080"
+      - "${PREFECT_SERVER_UI_EXPORT_PORT:-8080}:8080"
     command: "/intercept.sh"
     environment:
-      PREFECT_SERVER__APOLLO_URL: http://localhost:4200/graphql
+      PREFECT_SERVER__APOLLO_URL: http://${PREFECT_SERVER__APOLLO_HOST:-apollo}:${PREFECT_SERVER__APOLLO_PORT:-4200}/graphql
+      PREFECT_SERVER_UI_EXPORT_PORT: ${PREFECT_SERVER_UI_EXPORT_PORT:-8080}
     networks:
       - prefect-server
     restart: "always"
@@ -93,6 +102,8 @@ services:
 
 volumes:
   postgres:
+    external: true
+    name: ${POSTGRES_VOLUME_NAME}
 
 networks:
   prefect-server:
